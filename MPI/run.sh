@@ -6,7 +6,7 @@ which mpicc
 touch nodes
 /opt/nfs/config/station204_name_list.sh 1 16 > nodes
 echo ""
-echo "Checking avaliable stations: "
+echo "Checking avaliable nodes: "
 cat nodes
 
 make
