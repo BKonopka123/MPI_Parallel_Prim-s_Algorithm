@@ -13,12 +13,12 @@ make
 
 echo ""
 echo "Running Prim's algorithm for 3 nodes: "
-mpiexec -l -f nodes -n 3 ./main_program
+make post_build ARG=3
 
 echo ""
 echo "Running Prim's algorithm for 8 nodes: "
-mpiexec -l -f nodes -n 8 ./main_program
+make post_build ARG=8
 
 echo ""
 echo "Running Prim's algorithm for 16 nodes: "
-mpiexec -l -f nodes -n 16 ./main_program
+make post_build ARG=16

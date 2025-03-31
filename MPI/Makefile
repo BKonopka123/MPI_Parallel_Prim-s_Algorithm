@@ -17,3 +17,6 @@ $(TARGET): $(OBJS)
 
 clean:
 	rm -f $(OBJS) $(TARGET)
+
+post_build:
+	mpiexec -l -f nodes -n $(ARG) ./$(TARGET)
