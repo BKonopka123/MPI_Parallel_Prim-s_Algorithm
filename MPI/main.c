@@ -4,8 +4,8 @@
 #include <limits.h>
 #include <time.h>
 #include <string.h>
+#include <ctype.h>
 
-int nomatrix;
 int size;
 int rank;
 int* MatrixChunk;
@@ -16,9 +16,10 @@ typedef struct { int v1; int v2; } Edge;
 int* MST;
 int minWeight;
 FILE *f_matrix;
-FILE *f_time;
-FILE *f_result;
+FILE *f_output;
 
+
+//Handling MPI_INIT error
 void handle_error(int errcode, const char* msg) {
     if (errcode != MPI_SUCCESS) {
         char err_string[1024];
@@ -29,83 +30,102 @@ void handle_error(int errcode, const char* msg) {
     }
 }
 
-void pretty_print_matrix(int* matrix, int rows, int cols) {
+
+//Printing Matrix in console and Output File
+void pretty_print_matrix(int* matrix, int rows, int cols, int size, FILE* f_output) {
     if (matrix == NULL) {
         printf("Matrix is NULL\n");
         return;
     }
 
-    // Allocate an array of strings to hold each row as a string
     char** matrix_str = (char**)malloc(rows * sizeof(char*));
     if (matrix_str == NULL) {
         printf("Memory allocation failed.\n");
         return;
     }
 
-    // Allocate memory for each row's string (with enough space for formatting)
     for (int i = 0; i < rows; ++i) {
-        matrix_str[i] = (char*)malloc((cols * 6 + 1) * sizeof(char)); // Each number can take up to 5 chars + 1 for '\0'
+        matrix_str[i] = (char*)malloc((cols * 6 + 1) * sizeof(char));
         if (matrix_str[i] == NULL) {
             printf("Memory allocation failed.\n");
             return;
         }
     }
 
-    // Format each row and store it in the array of strings
     for (int i = 0; i < rows; ++i) {
-        matrix_str[i][0] = '\0'; // Start with an empty string
+        matrix_str[i][0] = '\0';
         for (int j = 0; j < cols; ++j) {
             char buffer[10];
             snprintf(buffer, sizeof(buffer), "%4d ", matrix[i * cols + j]);
-            strcat(matrix_str[i], buffer); // Append formatted number to row
+            strcat(matrix_str[i], buffer);
         }
     }
 
-    // Print the matrix
     printf("Formatted Matrix:\n");
-    for (int i = 0; i < rows; ++i) {
-        printf("%s\n", matrix_str[i]);
-        free(matrix_str[i]); // Free each row after printing
+    if(rows > 10){
+        printf("Too big to print in console - written to file");
     }
-
-    free(matrix_str); // Free the array of strings
+    fprintf(f_output , "------------------------------------------------\n");
+    fprintf(f_output , "Created Matrix for %d ranks: \n", size);
+    for (int i = 0; i < rows; ++i) {
+        if(rows <= 10){        
+            printf("%s\n", matrix_str[i]);
+        }
+        fprintf(f_output, "%s\n", matrix_str[i]);
+        free(matrix_str[i]);
+    }
+    fprintf(f_output, "\n");
+    fclose(f_output);
+    free(matrix_str);
 }
 
 int main(int argc, char *argv[]) {
+    
+    //Initializing MPI variables
     int errcode = MPI_Init(&argc, &argv);
     handle_error(errcode, "MPI_Init");
-
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+    srand(12345);
 
-    // Generate a seed based on rank and time, ensuring consistency
-    unsigned int seed = 12345 + rank;  // Base seed value combined with rank
-    srand(seed);
-
+    //Process 0 tries to read matrix size from Input file and opens Output file
     if (rank == 0) {
-        // Request mSize from the user only on rank 0
-        printf("Please enter the size of the matrix (mSize): ");
-        scanf("%d", &mSize);
-        
-        f_matrix = fopen("Matrix.txt", "r");
-        if (f_matrix) {
-            fscanf(f_matrix, "%d\n", &mSize);
-        } else {
-            // If file doesn't exist, generate random matrix
-            printf("Matrix.txt not found, generating random matrix...\n");
-            f_matrix = NULL;  // No file, so set the file pointer to NULL
+        f_output = fopen("Output/Output.txt", "a");
+        if (f_output == NULL) {
+            printf("Error in Opening Output File!\n");
         }
-        nomatrix = (f_matrix == NULL) ? 1 : 0;  // If no matrix file, set flag to generate random matrix
+
+        f_matrix = fopen("Input/Matrix.txt", "r");
+        if (f_matrix) {
+            if (fscanf(f_matrix, "%d", &mSize) != 1){
+                mSize = 64;
+                printf("Matrix.txt not created properly, generating matrix of size %d\n", mSize);
+            } else {
+                if(mSize <= 2){
+                    mSize = 64;
+                    printf("Matrix size is too small, generating matrix of size %d\n", mSize);
+                } else if(mSize > 2048){
+                    mSize = 64;
+                    printf("Matrix size is too big, generating matrix of size %d\n", mSize);
+                } else{
+                    printf("Matrix.txt created properly, generating matrix of size %d\n", mSize);
+                }
+            }
+        } else {
+            mSize = 64;
+            printf("Matrix.txt not found,  generating matrix of size %d\n", mSize);
+            f_matrix = NULL; 
+        }
     }
 
-    // Broadcast the matrix size to all processes
+    //Broadcast the matrix size to all processes
     MPI_Bcast(&mSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Allocate memory for displacements and sendcounts
+    //Allocate memory for displacements and sendcounts
     displs = (int*)malloc(sizeof(int) * size);
     sendcounts = (int*)malloc(sizeof(int) * size);
 
-    // Calculate the base number of rows for each process
+    //Calculate the base number of rows for each process
     int baseRows = mSize / size;
     int extraRows = mSize % size;
     for (int i = 0; i < size; ++i) {
@@ -113,62 +133,47 @@ int main(int argc, char *argv[]) {
         displs[i] = (i == 0) ? 0 : displs[i - 1] + sendcounts[i - 1];
     }
 
-    // Initialize matrix
+    //Initialize matrix - always random
     int* matrix = NULL;
     if (rank == 0) {
         matrix = (int*)malloc(mSize * mSize * sizeof(int));
-        if (f_matrix) {
-            // If the file is available, read the matrix from it
-            for (int i = 0; i < mSize; ++i) {
-                for (int j = 0; j < mSize; ++j) {
-                    if (i == j) {
-                        matrix[mSize * i + j] = 0;  // Diagonal elements are 0
-                    } else {
-                        fscanf(f_matrix, "%d", &matrix[mSize * i + j]);  // Read matrix values
-                    }
-                }
+        for (int i = 0; i < mSize; ++i) {
+            for (int j = i + 1; j < mSize; ++j) {
+                int weight = rand() % 20 + 1;
+                matrix[mSize * i + j] = weight;
+                matrix[mSize * j + i] = weight;
             }
-            fclose(f_matrix);
-        } else {
-            // If no matrix file, generate random values for the matrix
-            for (int i = 0; i < mSize; ++i) {
-                for (int j = i + 1; j < mSize; ++j) {  // Generate only upper triangle for symmetry
-                    int weight = rand() % 20 + 1;  // Random weight between 1 and 20
-                    matrix[mSize * i + j] = weight;
-                    matrix[mSize * j + i] = weight;  // Symmetric edge weight
-                }
-            }
-            for (int i=0; i < mSize; ++i) {
-                matrix[mSize * i + i] = 0;
-            }
+        }
+        for (int i=0; i < mSize; ++i) {
+            matrix[mSize * i + i] = 0;
         }
     }
 
-    // Print the matrix on rank 0 (before scattering)
+    //Print the matrix on rank 0 (before scattering)
     if (rank == 0) {
         printf("Input Matrix (Rank 0):\n");
-        pretty_print_matrix(matrix, mSize, mSize);
+        pretty_print_matrix(matrix, mSize, mSize, size, f_output);
     }
 
-    // Allocate memory for the matrix chunk for each process
+    //Allocate memory for the matrix chunk for each process
     MatrixChunk = (int*)malloc(sendcounts[rank] * mSize * sizeof(int));
 
-    // Create MPI data type for matrix row
+    //Create MPI data type for matrix row
     MPI_Datatype matrixString;
     MPI_Type_contiguous(mSize, MPI_INT, &matrixString);
     MPI_Type_commit(&matrixString);
 
-    // Scatter matrix to all processes
+    //Scatter matrix to all processes
     errcode = MPI_Scatterv(matrix, sendcounts, displs, matrixString, MatrixChunk, sendcounts[rank], matrixString, 0, MPI_COMM_WORLD);
     handle_error(errcode, "MPI_Scatterv");
 
-    // Free the custom datatype after usage
+    //Free the custom datatype after usage
     MPI_Type_free(&matrixString);
 
-    // Free the full matrix on rank 0 after scattering
+    //Free the full matrix on rank 0 after scattering
     if (rank == 0) free(matrix);
 
-    // Initialize MST array and other variables
+    //Initialize MST array and other variables
     MST = (int*)malloc(sizeof(int) * mSize);
     for (int i = 0; i < mSize; ++i) MST[i] = -1;
     
@@ -179,7 +184,7 @@ int main(int argc, char *argv[]) {
     struct { int min; int rank; } minRow, row;
     Edge edge;
 
-    // Perform Prim's algorithm to find MST
+    //Perform Prim's algorithm to find MST
     for (int k = 0; k < mSize - 1; ++k) {
         int min = INT_MAX, v1 = -1, v2 = -1;
         for (int i = 0; i < sendcounts[rank]; ++i) {
@@ -208,16 +213,20 @@ int main(int argc, char *argv[]) {
     double finish = MPI_Wtime();
     double calc_time = finish - start;
 
-    // Rank 0 writes the result to a file and prints it
+    //Rank 0 writes the result to a file and prints it
     if (rank == 0) {
-        f_result = fopen("Result.txt", "w");
-        fprintf(f_result, "The min weight is %d\n", minWeight);
-        for (int i = 0; i < mSize; ++i) fprintf(f_result, "Edge %d %d\n", i, MST[i]);
-        fclose(f_result);
-        
-        f_time = fopen("Time.txt", "a+");
-        fprintf(f_time, "\nProcessors: %d\nVertices: %d\nExecution Time: %f\nTotal Weight: %d\n\n", size, mSize, calc_time, minWeight);
-        fclose(f_time);
+        f_output = fopen("Output/Output.txt", "a");
+        if (f_output == NULL) {
+            printf("Error in Opening Output File!\n");
+        } else {
+
+            fprintf(f_output, "The min weight is %d\n", minWeight);
+            for (int i = 0; i < mSize; ++i) fprintf(f_output, "Edge %d %d\n", i, MST[i]);
+            fprintf(f_output, "\nProcessors: %d\nVertices: %d\nExecution Time: %f\nTotal Weight: %d\n\n", size, mSize, calc_time, minWeight);
+
+
+            fclose(f_output);
+        }
         
         printf("\nMST Result (Rank 0):\n");
         for (int i = 0; i < mSize; ++i) {
@@ -227,7 +236,6 @@ int main(int argc, char *argv[]) {
         printf("\nExecution Time: %f seconds\n", calc_time);
     }
 
-    // Free allocated memory
     free(MatrixChunk);
     free(MST);
     free(sendcounts);
