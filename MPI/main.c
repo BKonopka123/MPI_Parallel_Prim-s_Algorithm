@@ -6,13 +6,15 @@
 #include <string.h>
 #include <ctype.h>
 
+int isMatrixRandom;
 int size;
 int rank;
 int* MatrixChunk;
 int mSize;
 int* displs;
 int* sendcounts;
-typedef struct { int v1; int v2; } Edge;
+typedef struct { int v1; int v2;} Edge;
+int* MST_w;
 int* MST;
 int minWeight;
 FILE *f_matrix;
@@ -75,7 +77,6 @@ void pretty_print_matrix(int* matrix, int rows, int cols, int size, FILE* f_outp
         free(matrix_str[i]);
     }
     fprintf(f_output, "\n");
-    fclose(f_output);
     free(matrix_str);
 }
 
@@ -99,23 +100,34 @@ int main(int argc, char *argv[]) {
         if (f_matrix) {
             if (fscanf(f_matrix, "%d", &mSize) != 1){
                 mSize = 64;
+                isMatrixRandom = 1;
                 printf("Matrix.txt not created properly, generating matrix of size %d\n", mSize);
             } else {
                 if(mSize <= 2){
                     mSize = 64;
+                    isMatrixRandom = 1;
                     printf("Matrix size is too small, generating matrix of size %d\n", mSize);
                 } else if(mSize > 2048){
                     mSize = 64;
+                    isMatrixRandom = 1;
                     printf("Matrix size is too big, generating matrix of size %d\n", mSize);
                 } else{
-                    printf("Matrix.txt created properly, generating matrix of size %d\n", mSize);
+                    if(fscanf(f_matrix, "%d", &isMatrixRandom) == 1){
+                        isMatrixRandom = 0;
+                        printf("Matrix.txt created properly, getting matrix of size %d from file\n", mSize);
+                    } else {
+                        isMatrixRandom = 1;
+                        printf("Matrix.txt created properly, generating matrix of size %d\n", mSize);
+                    }
                 }
             }
         } else {
             mSize = 64;
+            isMatrixRandom = 1;
             printf("Matrix.txt not found,  generating matrix of size %d\n", mSize);
             f_matrix = NULL; 
         }
+        fclose(f_matrix);
     }
 
     //Broadcast the matrix size to all processes
@@ -133,19 +145,38 @@ int main(int argc, char *argv[]) {
         displs[i] = (i == 0) ? 0 : displs[i - 1] + sendcounts[i - 1];
     }
 
-    //Initialize matrix - always random
+    //Initialize matrix - if Matrix is in file Matrix.txt it MUST be created properly
     int* matrix = NULL;
     if (rank == 0) {
         matrix = (int*)malloc(mSize * mSize * sizeof(int));
-        for (int i = 0; i < mSize; ++i) {
-            for (int j = i + 1; j < mSize; ++j) {
-                int weight = rand() % 20 + 1;
-                matrix[mSize * i + j] = weight;
-                matrix[mSize * j + i] = weight;
+        if(isMatrixRandom) {
+            for (int i=0; i < mSize; ++i) {
+                matrix[mSize * i + i] = 0;
             }
-        }
-        for (int i=0; i < mSize; ++i) {
-            matrix[mSize * i + i] = 0;
+            for (int i = 0; i < mSize; ++i) {
+                for (int j = i + 1; j < mSize; ++j) {
+                    int weight;
+                    if(matrix[mSize * i + j - 1] == 0) {
+                        weight = rand() % 20 + 1;
+                    } else {
+                        weight = rand() % 20;
+                        if (rand() % 4 == 0) {
+                            weight = 0;
+                        }
+                    }
+                    matrix[mSize * i + j] = weight;
+                    matrix[mSize * j + i] = weight;
+                }
+            }
+        } else {
+            f_matrix = fopen("Input/Matrix.txt", "r");
+            fscanf(f_matrix, "%d", &isMatrixRandom);
+            for (int i = 0; i < mSize; ++i) {
+                for (int j = 0; j < mSize; ++j) {
+                    fscanf(f_matrix, "%d", &matrix[mSize * i + j]);
+                }
+            }
+            fclose(f_matrix);
         }
     }
 
@@ -153,6 +184,7 @@ int main(int argc, char *argv[]) {
     if (rank == 0) {
         printf("Input Matrix (Rank 0):\n");
         pretty_print_matrix(matrix, mSize, mSize, size, f_output);
+        fclose(f_output);
     }
 
     //Allocate memory for the matrix chunk for each process
@@ -175,7 +207,11 @@ int main(int argc, char *argv[]) {
 
     //Initialize MST array and other variables
     MST = (int*)malloc(sizeof(int) * mSize);
-    for (int i = 0; i < mSize; ++i) MST[i] = -1;
+    MST_w = (int*)malloc(sizeof(int) * mSize);
+    for (int i = 0; i < mSize; ++i) {
+        MST[i] = -1;
+        MST_w[i] = 0;
+    }
     
     double start = MPI_Wtime();
     MST[0] = 0;
@@ -207,6 +243,7 @@ int main(int argc, char *argv[]) {
         MPI_Bcast(&edge, 1, MPI_2INT, minRow.rank, MPI_COMM_WORLD);
         
         MST[edge.v2] = edge.v1;
+        MST_w[edge.v2] = minRow.min;
         minWeight += minRow.min;
     }
 
@@ -221,7 +258,7 @@ int main(int argc, char *argv[]) {
         } else {
 
             fprintf(f_output, "The min weight is %d\n", minWeight);
-            for (int i = 0; i < mSize; ++i) fprintf(f_output, "Edge %d %d\n", i, MST[i]);
+            for (int i = 0; i < mSize; ++i) fprintf(f_output, "Edge %d %d - weight %d \n", i, MST[i], MST_w[i]);
             fprintf(f_output, "\nProcessors: %d\nVertices: %d\nExecution Time: %f\nTotal Weight: %d\n\n", size, mSize, calc_time, minWeight);
 
 
@@ -230,7 +267,7 @@ int main(int argc, char *argv[]) {
         
         printf("\nMST Result (Rank 0):\n");
         for (int i = 0; i < mSize; ++i) {
-            printf("Vertex %d -> Parent %d\n", i, MST[i]);
+            printf("Vertex %d -> Parent %d - Weight: %d\n", i, MST[i], MST_w[i]);
         }
         printf("Total Weight: %d\n", minWeight);
         printf("\nExecution Time: %f seconds\n", calc_time);
