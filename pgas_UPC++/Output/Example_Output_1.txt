@@ -1,0 +1,48 @@
+------------------------------------------------
+Created Matrix for 4 ranks:
+   0   5   0   9   0   0   3   0
+   5   0   9   0   8   6   0   7
+   0   9   0   9   4   0   5   3
+   9   0   9   0   0   0   8   0
+   0   8   4   0   0   2   1   0
+   0   6   0   0   2   0   6   0
+   3   0   5   8   1   6   0   9
+   0   7   3   0   0   0   9   0
+
+The min weight is 26
+Edge 6 0 - weight 3
+Edge 4 6 - weight 1
+Edge 5 4 - weight 2
+Edge 2 4 - weight 4
+Edge 7 2 - weight 3
+Edge 1 0 - weight 5
+Edge 3 6 - weight 8
+
+Processors: 4
+Vertices: 8
+Execution Time: 0.00272028 s
+Total Weight: 26
+------------------------------------------------
+Created Matrix for 8 ranks:
+   0   5   0   9   0   0   3   0
+   5   0   9   0   8   6   0   7
+   0   9   0   9   4   0   5   3
+   9   0   9   0   0   0   8   0
+   0   8   4   0   0   2   1   0
+   0   6   0   0   2   0   6   0
+   3   0   5   8   1   6   0   9
+   0   7   3   0   0   0   9   0
+
+The min weight is 26
+Edge 6 0 - weight 3
+Edge 4 6 - weight 1
+Edge 5 4 - weight 2
+Edge 2 4 - weight 4
+Edge 7 2 - weight 3
+Edge 1 0 - weight 5
+Edge 3 6 - weight 8
+
+Processors: 8
+Vertices: 8
+Execution Time: 0.00483210 s
+Total Weight: 26
