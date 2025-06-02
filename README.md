@@ -88,7 +88,7 @@ stud204-14
 After creating file "nodes" run program with:
 
 ```bash
-make post_build ARG=number_of_nodes
+make run ARG=number_of_nodes
 ```
 
 Where number_of_nodes is the number of nodes that will be used in the program.
