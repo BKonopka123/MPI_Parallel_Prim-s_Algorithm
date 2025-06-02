@@ -95,7 +95,7 @@ Where number_of_nodes is the number of nodes that will be used in the program.
 
 ### How to run program with Scripts (only in stud-204):
 
-To compile program, create file "nodes" and run program on 3, 8 and 16 nodes, use:
+To compile program, create file "nodes" and run program on 3 and 8, use:
 
 ```bash
 ./run.sh
